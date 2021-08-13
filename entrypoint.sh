@@ -6,7 +6,17 @@ sh -c "docker run -d -p 5984:5984 -p 5986:5986 --tmpfs /ram_disk couchdb:$INPUT_
 # CouchDB container name
 export NAME=`docker ps --format "{{.Names}}" --last 1`
 
-docker exec $NAME sh -c 'mkdir -p /opt/couchdb/etc/local.d && echo "[couchdb]\ndatabase_dir = /ram_disk\nview_index_dir = /ram_disk\ndelayed_commits = true\n[httpd]\nsocket_options = [{nodelay, true}]\n[native_query_servers]\nerlang = {couch_native_process, start_link, []}" >> /opt/couchdb/etc/local.d/01-github-action-custom.ini'
+IS_3X=`echo $INPUT_COUCHDB_VERSION | grep -E '^3\.\d+\.\d+'`
+
+if [ -z "$IS_3x" ]; then
+  docker exec $NAME sh -c 'mkdir -p /opt/couchdb/etc/local.d && echo "[couchdb]\ndatabase_dir = /ram_disk\nview_index_dir = /ram_disk\ndelayed_commits = true\n[httpd]\nsocket_options = [{nodelay, true}]\n[native_query_servers]\nerlang = {couch_native_process, start_link, []}" >> /opt/couchdb/etc/local.d/01-github-action-custom.ini'
+else
+  if [ -z "$INPUT_COUCHDB_ADMIN_USER" -o -z "$INPUT_COUCHDB_ADMIN_PASS"]; then
+    echo "CouchDB 3.x requires admin credentials. You’re missing `couchdb_admin_user` and/or `couchdb_admin_pass`"
+    exit 1
+  fi
+  docker exec $NAME sh -c 'mkdir -p /opt/couchdb/etc/local.d && echo "[couchdb]\ndatabase_dir = /ram_disk\nview_index_dir = /ram_disk\ndelayed_commits = true\n[httpd]\nsocket_options = [{nodelay, true}]\n[native_query_servers]\nerlang = {couch_native_process, start_link, []}\n[admins]\n$INPUT_COUCHDB_ADMIN_USER = $INPUT_COUCHDB_ADMIN_PASS" >> /opt/couchdb/etc/local.d/01-github-action-custom.ini'
+fi
 
 wait_for_couchdb() {
   echo "Waiting for CouchDB..."
@@ -22,6 +32,6 @@ wait_for_couchdb
 
 # Set up system databases
 echo "Setting up CouchDB system databases..."
-docker exec $NAME curl -sS 'http://127.0.0.1:5984/_users' -X PUT -H 'Content-Type: application/json' --data '{"id":"_users","name":"_users"}' > /dev/null
-docker exec $NAME curl -sS 'http://127.0.0.1:5984/_global_changes' -X PUT -H 'Content-Type: application/json' --data '{"id":"_global_changes","name":"_global_changes"}' > /dev/null
-docker exec $NAME curl -sS 'http://127.0.0.1:5984/_replicator' -X PUT -H 'Content-Type: application/json' --data '{"id":"_replicator","name":"_replicator"}' > /dev/null
+docker exec $NAME curl -sS 'http://$INPUT_COUCHDB_ADMIN_USER:$INPUT_COUCHDB_ADMIN_PASS@127.0.0.1:5984/_users' -X PUT -H 'Content-Type: application/json' --data '{"id":"_users","name":"_users"}' > /dev/null
+docker exec $NAME curl -sS 'http://$INPUT_COUCHDB_ADMIN_USER:$INPUT_COUCHDB_ADMIN_PASS@127.0.0.1:5984/_global_changes' -X PUT -H 'Content-Type: application/json' --data '{"id":"_global_changes","name":"_global_changes"}' > /dev/null
+docker exec $NAME curl -sS 'http://$INPUT_COUCHDB_ADMIN_USER:$INPUT_COUCHDB_ADMIN_PASS@127.0.0.1:5984/_replicator' -X PUT -H 'Content-Type: application/json' --data '{"id":"_replicator","name":"_replicator"}' > /dev/null
